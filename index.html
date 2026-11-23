@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="es-MX"><meta charset="utf-8"><meta name="robots" content="noindex,nofollow"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Marcianos en espejo · Invaders LED</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#10111b;color:#edf2fc;font:16px/1.5 system-ui,sans-serif}main{width:min(100%,800px);margin:auto;padding:26px}a{color:#c7c8fa}h1{margin:16px 0 6px;font-size:clamp(2rem,7vw,4rem);line-height:1;letter-spacing:-.06em}p{color:#c8ccdf}canvas{width:100%;max-width:360px;background:#0a0811;border:1px solid #694a77;border-radius:14px;display:block}section{display:grid;grid-template-columns:minmax(210px,360px) 1fr;gap:22px;align-items:start;margin-top:22px}label{display:block;margin:9px 0}button,select{font:inherit;background:#2d243b;color:#fff;border:1px solid #795e86;padding:8px 10px;border-radius:8px}button{cursor:pointer}button:focus-visible,select:focus-visible{outline:3px solid #ffa5d0}#label{font-weight:700;color:#fff}small{display:block;color:#bfc2d8;margin-top:18px}@media(max-width:580px){section{grid-template-columns:1fr}main{padding:17px}}
+</style>
+<main><h1>Marcianos en espejo.</h1><p>Dos tamaños y dos vistas sobre la misma matriz de 16 × 16.</p>
+<section><canvas id="led" width="320" height="320" role="img" aria-label="Matriz de 16 por 16"></canvas><div>
+<label>Tamaño <select id="size"><option value="5">5 × 5</option><option value="6" selected>6 × 6</option></select></label>
+<label>Vista <select id="view"><option value="clock">Reloj sin separador</option><option value="four">Cuatro marcianos</option></select></label>
+<p id="label"></p>
+<label><input type="checkbox" id="live"> Usar la hora de esta computadora</label>
+<button type="button" id="sequence">Reproducir 1 → 4</button> <button type="button" id="advance">Avanzar un paso</button>
+<p>En 6 × 6, la figura central queda a la misma distancia de ambos lados. Los cuatro diseños se dibujaron desde cero, no son versiones estiradas de los 5 × 5.</p>
+</div></section>
+<small>Filtro de prueba 6 × 6: 12–28 LED, mínimo 4 columnas y 5 filas, una sola pieza conectada por lados y al menos un rasgo visual (ojos, puntas o patas). La valoración visual sigue siendo aparte.</small></main>
+<script>
+'use strict';
+const small=['#...#/#####/##.##/.###./.#.#.','..#../.###./#####/#.#.#/#...#','.###./#####/#.#.#/#####/..#..','.#.#./#####/#.#.#/##.##/#...#'].map(a=>a.split('/'));
+const large=['#....#/######/##..##/######/.####./.#..#.','..##../.####./######/#.##.#/#.##.#/#....#','.####./##..##/######/#.##.#/######/..##..','.#..#./.####./######/##..##/######/#....#'].map(a=>a.split('/'));
+const colors=['#ffa5d0','#8be0c6','#a5ceff','#f8d089'];
+const num=['111/101/101/101/111','010/110/010/010/111','111/001/111/100/111','111/001/111/001/111','101/101/111/001/001','111/100/111/001/111','111/100/111/101/111','111/001/010/010/010','111/101/111/101/111','111/101/111/001/111'];
+function filter6(rows){
+ const count=rows.join('').split('#').length-1, active=rows.map((r,y)=>[...r].map((p,x)=>p==='#'?y*6+x:-1).filter(p=>p>=0)).flat();
+ const width=new Set(active.map(i=>i%6)).size,height=new Set(active.map(i=>Math.floor(i/6))).size;
+ const set=new Set(active), seen=new Set(), todo=[active[0]];
+ while(todo.length){const n=todo.pop();if(!set.has(n)||seen.has(n))continue;seen.add(n);todo.push(n-6,n+6);if(n%6>0)todo.push(n-1);if(n%6<5)todo.push(n+1);}
+ const occupied=rows.filter(r=>r.includes('#')), top=occupied[0]||'', bottom=occupied.at(-1)||'';
+ const eyes=occupied.slice(1,-1).some(r=>['#.##.#','##..##'].includes(r));
+ const tips=top==='#....#'||top==='.#..#.';
+ const feet=['#....#','.#..#.','##..##'].includes(bottom);
+ return {count,width,height,eyes,tips,feet,valid:count>=12&&count<=28&&width>=4&&height>=5&&seen.size===count&&(eyes||tips||feet)};
+}
+function fromMask(m){return Array.from({length:6},(_,y)=>Array.from({length:6},(_,x)=>(m>>(y*3+Math.min(x,5-x)))&1?'#':'.').join(''));}
+function count6(){let masks=0;const distinct=new Set();for(let m=0;m<2**18;m++){
+ const r=fromMask(m);if(!filter6(r).valid)continue;masks++;
+ const occupied=r.filter(q=>q.includes('#')), left=Math.min(...occupied.map(q=>q.indexOf('#'))),right=Math.max(...occupied.map(q=>q.lastIndexOf('#')));
+ distinct.add(r.slice(r.findIndex(q=>q.includes('#')),r.findLastIndex(q=>q.includes('#'))+1).map(q=>q.slice(left,right+1)).join('/'));
+ }return {masks,unique:distinct.size};}
+function render({size=6,view='clock',hour=9,minute=9,seconds=0,stage=4,milliseconds=250,reduced=false}={}){
+ const pixels=Array(256).fill(null), shapes=size===6?large:small;
+ const put=(x,y,c)=>{if(x>=0&&x<16&&y>=0&&y<16)pixels[y*16+x]=c;};
+ const paint=(r,x,y,color,marker)=>r.forEach((line,j)=>[...line].forEach((q,i)=>{if(q===marker)put(x+i,y+j,color);}));
+ if(view==='clock'){
+  const digits=String(hour).padStart(2,'0')+String(minute).padStart(2,'0');
+  [...digits].forEach((d,i)=>paint(num[Number(d)].split('/'),[0,4,9,13][i],1,'#dbeafe','1'));
+  const k=minute%4, c=colors[k];
+  paint(shapes[k],size===6?5:6,size===6?8:9,!reduced&&milliseconds<145?'#ecfaff':c,'#');
+  for(let i=0;i<6;i++){const fill=i<Math.ceil((seconds+1)/10)?c:'#524967';put(7-i,15,fill);put(8+i,15,fill);}
+ }else{
+  const zone=size===6?[[1,1],[9,1],[1,9],[9,9]]:[[2,2],[9,2],[2,9],[9,9]];
+  for(let i=0;i<stage;i++)paint(shapes[i],...zone[i],colors[i],'#');
+ }
+ return {size,view,hour,minute,seconds,stage,pixels};
+}
+if(typeof module!=='undefined')module.exports={render,small,large,filter6,fromMask,count6};
+if(typeof document!=='undefined'){
+ const $=s=>document.getElementById(s),c=$('led').getContext('2d');let stage=4, polling=0, live=false, mode='clock', size=6;
+ function draw(){
+ const d=live?new Date():null;
+ const f=render({view:mode,size,stage,hour:d?d.getHours():9,minute:d?d.getMinutes():9,seconds:d?d.getSeconds():4,milliseconds:d?d.getMilliseconds():250,reduced:matchMedia('(prefers-reduced-motion: reduce)').matches});
+ f.pixels.forEach((v,i)=>{c.fillStyle=v||'#272337';c.fillRect((i%16)*20+3,Math.floor(i/16)*20+3,14,14);});
+ $('label').textContent=mode==='clock'?(d?d.toLocaleTimeString('es-MX',{hour12:false}):'09:09'):'Marcianos visibles: '+stage+' de 4';
+ $('led').setAttribute('aria-label',size+' por '+size+' · '+$('label').textContent);
+ }
+ $('size').onchange=()=>{size=Number($('size').value);draw();};$('view').onchange=()=>{mode=$('view').value;draw();};
+ $('advance').onclick=()=>{clearInterval(polling);$('view').value='four';mode='four';stage=stage%4+1;draw();};
+ $('sequence').onclick=()=>{clearInterval(polling);$('view').value='four';mode='four';stage=1;draw();polling=setInterval(()=>{if(stage>=4){clearInterval(polling);return;}stage++;draw();},850);};
+ $('live').onchange=()=>{live=$('live').checked;draw();}; draw();setInterval(()=>{if(live&&mode==='clock')draw();},100);
+}
+
+</script>
+</html>
